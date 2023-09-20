@@ -4,5 +4,6 @@
 namespace common {
 typedef long long int64_t;
 typedef int int32_t;
+typedef unsigned long ulong;
 }  // namespace common
 #endif

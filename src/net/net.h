@@ -8,6 +8,7 @@
 namespace net {
 using common::int32_t;
 using common::int64_t;
+using common::ulong;
 
 enum NetStatus {
   LISTENING,
@@ -41,12 +42,6 @@ class NetWorkHelper {
  public:
   static bool GetConnection(NetWorkTable *ptable);
   static bool GetConnectionWithPid(NetWorkTable *ptable);
-#ifdef __linux__
- private:
-  static bool DoGetTcpInfo(NetWorkTable *ptable);
-  static bool DoGetUdpInfo(NetWorkTable *ptable);
-  static void Reader(const int64_t &pid, NetWorkTable *ptable);
-#endif
 };
 
 }  // namespace net

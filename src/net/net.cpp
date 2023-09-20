@@ -28,7 +28,7 @@ NetStatus tcp_state[] = {NO_STATUS,  ESTABLISHED, NO_STATUS, NO_STATUS,
                          NO_STATUS,  NO_STATUS,   TIME_WAIT, NO_STATUS,
                          CLOSE_WAIT, NO_STATUS,   LISTENING, NO_STATUS};
 
-bool NetWorkHelper::DoGetTcpInfo(NetWorkTable *ptable) {
+bool DoGetTcpInfo(NetWorkTable *ptable) {
   const char *tcp_file[] = {"/proc/net/tcp", "/proc/net/tcp6"};
   ScopedFile fp;
   for (int i = 0; i < 2; i++) {
@@ -88,7 +88,7 @@ bool NetWorkHelper::DoGetTcpInfo(NetWorkTable *ptable) {
   return true;
 }
 
-bool NetWorkHelper::DoGetUdpInfo(NetWorkTable *ptable) {
+bool DoGetUdpInfo(NetWorkTable *ptable) {
   const char *udp_file[] = {"/proc/net/udp", "/proc/net/udp6"};
   ScopedFile fp;
   for (int i = 0; i < 2; i++) {
@@ -138,7 +138,7 @@ bool NetWorkHelper::DoGetUdpInfo(NetWorkTable *ptable) {
   return true;
 }
 
-void NetWorkHelper::Reader(const int64_t &pid, NetWorkTable *ptable) {
+void Reader(const int64_t &pid, NetWorkTable *ptable) {
   char fd_dir[PROCPATHLEN];
   sprintf(fd_dir, "/proc/%d/fd", pid);
 
@@ -205,21 +205,10 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
                            NO_STATUS,  ESTABLISHED, NO_STATUS, NO_STATUS,
                            CLOSE_WAIT, NO_STATUS,   NO_STATUS, TIME_WAIT};
 
-  WSADATA wsaData;
-  if (WSAStartup(MAKEWORD(2, 2), &wsaData)) {
-    return false;
-  }
-
   do {
-    union SockAddr {
-      SOCKADDR_IN v4;
-      SOCKADDR_IN6 v6;
-    } addrinfo;
-
-    DWORD net_table_size;
+    ulong net_table_size;
     ScopedPtr<BYTE> net_table;
 
-    DWORD addr_length = 0;
     char ipaddress[INET6_ADDRSTRLEN];
     int32_t ip_type[] = {AF_INET6, AF_INET};
     for (int i = 0; i < 2; i++) {
@@ -234,34 +223,28 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
             if (i == 0) {
               MIB_TCP6TABLE_OWNER_PID *net_table_v6 =
                   (MIB_TCP6TABLE_OWNER_PID *)(BYTE *)net_table;
-              for (DWORD i = 0; i < net_table_v6->dwNumEntries; i++) {
+              for (ulong i = 0; i < net_table_v6->dwNumEntries; i++) {
                 MIB_TCP6ROW_OWNER_PID row = net_table_v6->table[i];
                 NetWork netInfo;
                 netInfo.protocol = TCP;
                 netInfo.pid = row.dwOwningPid;
                 netInfo.status = tcp_state[row.dwState];
+
                 // local addr info
-                addr_length = INET6_ADDRSTRLEN;
-                addrinfo.v6.sin6_family = AF_INET6;
-                memcpy(addrinfo.v6.sin6_addr.s6_addr, row.ucLocalAddr,
-                       sizeof(row.ucLocalAddr));
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v6,
-                                         sizeof(addrinfo.v6), NULL, ipaddress,
-                                         &addr_length)) {
-                  netInfo.local_host = ipaddress;
-                  netInfo.local_host.resize(addr_length);
+                if (inet_ntop(AF_INET6, row.ucLocalAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
+                  netInfo.local_host.append("[").append(ipaddress).append("]");
+                } else {
+                  netInfo.local_host = "[::]";
                 }
                 netInfo.local_port = ntohs(row.dwLocalPort);
 
                 // remote addr info
-                addr_length = INET6_ADDRSTRLEN;
-                memcpy(addrinfo.v6.sin6_addr.s6_addr, row.ucRemoteAddr,
-                       sizeof(row.ucRemoteAddr));
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v6,
-                                         sizeof(addrinfo.v6), NULL, ipaddress,
-                                         &addr_length)) {
-                  netInfo.remote_host = ipaddress;
-                  netInfo.remote_host.resize(addr_length);
+                if (inet_ntop(AF_INET6, row.ucRemoteAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
+                  netInfo.remote_host.append("[").append(ipaddress).append("]");
+                } else {
+                  netInfo.remote_host = "[::]";
                 }
                 netInfo.remote_port = ntohs(row.dwRemotePort);
 
@@ -270,32 +253,28 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
             } else {
               MIB_TCPTABLE_OWNER_PID *net_table_v4 =
                   (MIB_TCPTABLE_OWNER_PID *)(BYTE *)net_table;
-              for (DWORD i = 0; i < net_table_v4->dwNumEntries; i++) {
+              for (ulong i = 0; i < net_table_v4->dwNumEntries; i++) {
                 MIB_TCPROW_OWNER_PID row = net_table_v4->table[i];
                 NetWork netInfo;
                 netInfo.protocol = TCP;
                 netInfo.pid = row.dwOwningPid;
                 netInfo.status = tcp_state[row.dwState];
+
                 // local addr info
-                addr_length = INET_ADDRSTRLEN;
-                addrinfo.v4.sin_family = AF_INET;
-                addrinfo.v4.sin_addr.s_addr = row.dwLocalAddr;
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v4,
-                                         sizeof(addrinfo.v4), NULL, ipaddress,
-                                         &addr_length)) {
+                if (inet_ntop(AF_INET, &row.dwLocalAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
                   netInfo.local_host = ipaddress;
-                  netInfo.local_host.resize(addr_length);
+                } else {
+                  netInfo.local_host = "0.0.0.0";
                 }
                 netInfo.local_port = ntohs(row.dwLocalPort);
 
                 // remote addr info
-                addr_length = INET_ADDRSTRLEN;
-                addrinfo.v4.sin_addr.s_addr = row.dwRemoteAddr;
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v4,
-                                         sizeof(addrinfo.v4), NULL, ipaddress,
-                                         &addr_length)) {
+                if (inet_ntop(AF_INET, &row.dwRemoteAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
                   netInfo.remote_host = ipaddress;
-                  netInfo.remote_host.resize(addr_length);
+                } else {
+                  netInfo.remote_host = "0.0.0.0";
                 }
                 netInfo.remote_port = ntohs(row.dwRemotePort);
 
@@ -319,31 +298,27 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
             if (i == 0) {
               MIB_UDP6TABLE_OWNER_PID *net_table_v6 =
                   (MIB_UDP6TABLE_OWNER_PID *)(BYTE *)net_table;
-              for (DWORD i = 0; i < net_table_v6->dwNumEntries; i++) {
+              for (ulong i = 0; i < net_table_v6->dwNumEntries; i++) {
                 MIB_UDP6ROW_OWNER_PID row = net_table_v6->table[i];
                 NetWork netInfo;
                 netInfo.protocol = UDP;
                 netInfo.pid = row.dwOwningPid;
                 netInfo.status = NO_STATUS;
+
                 // local addr netInfo
-                addr_length = INET6_ADDRSTRLEN;
-                addrinfo.v6.sin6_family = AF_INET6;
-                memcpy(addrinfo.v6.sin6_addr.s6_addr, row.ucLocalAddr,
-                       sizeof(row.ucLocalAddr));
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v6,
-                                         sizeof(addrinfo.v6), NULL, ipaddress,
-                                         &addr_length)) {
-                  netInfo.local_host = ipaddress;
-                  netInfo.local_host.resize(addr_length);
+                if (inet_ntop(AF_INET6, row.ucLocalAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
+                  netInfo.local_host.append("[").append(ipaddress).append("]");
+                } else {
+                  netInfo.local_host = "[::]";
                 }
                 netInfo.local_port = ntohs(row.dwLocalPort);
-
                 ptable->push_back(netInfo);
               }
             } else {
               MIB_UDPTABLE_OWNER_PID *net_table_v4 =
                   (MIB_UDPTABLE_OWNER_PID *)(BYTE *)net_table;
-              for (DWORD i = 0; i < net_table_v4->dwNumEntries; i++) {
+              for (ulong i = 0; i < net_table_v4->dwNumEntries; i++) {
                 MIB_UDPROW_OWNER_PID row = net_table_v4->table[i];
                 NetWork netInfo;
                 netInfo.protocol = UDP;
@@ -351,14 +326,11 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
                 netInfo.status = NO_STATUS;
 
                 // local addr netInfo
-                addr_length = INET_ADDRSTRLEN;
-                addrinfo.v4.sin_family = AF_INET;
-                addrinfo.v4.sin_addr.s_addr = row.dwLocalAddr;
-                if (!WSAAddressToStringA((LPSOCKADDR)&addrinfo.v4,
-                                         sizeof(addrinfo.v4), NULL, ipaddress,
-                                         &addr_length)) {
+                if (inet_ntop(AF_INET, &row.dwLocalAddr, ipaddress,
+                              INET6_ADDRSTRLEN)) {
                   netInfo.local_host = ipaddress;
-                  netInfo.local_host.resize(addr_length);
+                } else {
+                  netInfo.local_host = "0.0.0.0";
                 }
                 netInfo.local_port = ntohs(row.dwLocalPort);
 
@@ -370,8 +342,6 @@ bool NetWorkHelper::GetConnection(NetWorkTable *ptable) {
       }
     }
   } while (false);
-
-  WSACleanup();
 
   return true;
 #endif
