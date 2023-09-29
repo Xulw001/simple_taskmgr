@@ -11,10 +11,9 @@ struct Proc {
   int64_t pid;
   std::string name;
   std::string username;
-  int32_t cpu_usage;
+  float cpu_usage;
   int64_t memory;
-  int32_t mem_usage;
-  std::string imagename;
+  float mem_usage;
   std::string startparamater;
 };
 

@@ -1,7 +1,5 @@
 #include "proc.hpp"
 
-#include "cpu.h"
-#include "tool.h"
 #ifdef __linux__
 #include <pwd.h>
 #include <stdio.h>
@@ -21,12 +19,16 @@ using scope::ScopedHandle;
 using scope::ScopedModule;
 using scope::ScopedPtr;
 #endif
+
+#include "cpu.h"
+#include "tool.h"
+
 namespace proc {
 
 bool ProcLoader::TraverseProc(ProcTable *procs) {
   CpuHelper::UpdateSysCpuTime();
 #ifdef __linux__
-  return ProcHelper::ReadProc(ProcLoader::ProcReader, procs);
+  return ProcLoader::ReadProc(ProcLoader::ProcReader, procs);
 #else
   ScopedHandle hSnapshot(
       CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0));
@@ -41,8 +43,9 @@ bool ProcLoader::TraverseProc(ProcTable *procs) {
         Proc info;
         info.pid = pe32.th32ProcessID;
         info.name = path;
-        GetDetailByPid(&info);
-        procs->emplace_back(info);
+        if (GetDetailByPid(&info)) {
+          procs->emplace_back(info);
+        }
       } while (Process32Next(hSnapshot, &pe32));
     }
 
@@ -66,14 +69,14 @@ void ProcLoader::ProcReader(const int64_t &pid, ProcTable *ptable) {
     return;
   }
 
-  if (!GetStartInfoByPid(pid, &proc.imagename, &proc.startparamater)) {
+  if (!GetStartInfoByPid(pid, &proc.startparamater)) {
     return;
   }
 
   ptable->emplace_back(proc);
 }
 
-bool GetStatusInfoByPid(const int64_t &memory, int32_t *mem_usage) {
+bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
   const char *meminfo_path = "/proc/meminfo";
   ScopedFile fp(fopen(meminfo_path, "r"));
   if (fp) {
@@ -85,7 +88,7 @@ bool GetStatusInfoByPid(const int64_t &memory, int32_t *mem_usage) {
         break;
       }
     }
-    *mem_usage = memory * 1024 * 1000.0f / total_memory;
+    *mem_usage = memory * 1024 * 100.0f / total_memory;
     return true;
   }
   return false;
@@ -123,8 +126,7 @@ bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
   return false;
 }
 
-bool GetStartInfoByPid(const int64_t &pid, std::string *imagepath,
-                       std::string *startparamater) {
+bool GetStartInfoByPid(const int64_t &pid, std::string *startparamater) {
   char cmd_path[PROCPATHLEN];
   sprintf(cmd_path, "/proc/%d/cmdline", pid);
 
@@ -132,13 +134,12 @@ bool GetStartInfoByPid(const int64_t &pid, std::string *imagepath,
   if (fp) {
     char line[4096];
     if (fgets(line, sizeof(line), fp)) {
-      imagepath->assign(line);
       startparamater->assign(line);
       int32_t offset = startparamater->size() + 1;
       while (line[offset]) {
         startparamater->append(" ");
         startparamater->append(line + offset);
-        offset += strlen(line + offset) + 1;
+        offset += startparamater.size() + 1;
       }
     }
     return true;
@@ -146,26 +147,6 @@ bool GetStartInfoByPid(const int64_t &pid, std::string *imagepath,
   return false;
 }
 #else
-bool ProcHelper::GetDetailByPid(Proc *proc) {
-  ScopedHandle hProcess(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                                    FALSE, proc->pid));
-  if (hProcess) {
-    if (!GetUserNameByPid(hProcess, &proc->username)) {
-      return false;
-    }
-    if (!GetStartInfoByPid(hProcess, &proc->imagename, &proc->startparamater)) {
-      return false;
-    }
-    if (!GetMemByPid(hProcess, &proc->memory, &proc->mem_usage)) {
-      return false;
-    }
-    if (!CpuHelper::GetCpuUsageByPid(hProcess, &proc->cpu_usage)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool GetUserNameByPid(const HANDLE &hProcess, std::string *username) {
   bool ret = false;
   if (hProcess) {
@@ -202,7 +183,7 @@ bool GetUserNameByPid(const HANDLE &hProcess, std::string *username) {
 }
 
 bool GetMemByPid(const HANDLE &hProcess, int64_t *mem_used_size,
-                 int32_t *mem_usage) {
+                 float *mem_usage) {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
   if (hProcess) {
@@ -235,7 +216,7 @@ bool GetMemByPid(const HANDLE &hProcess, int64_t *mem_used_size,
       return false;
     }
 
-    *mem_usage = (*mem_used_size) * 1000.0f / mem_info.ullTotalPhys;
+    *mem_usage = (*mem_used_size) * 100.0f / mem_info.ullTotalPhys;
     *mem_used_size = (*mem_used_size) / 1024;
 
     return true;
@@ -246,8 +227,7 @@ bool GetMemByPid(const HANDLE &hProcess, int64_t *mem_used_size,
 
 typedef NTSTATUS(NTAPI *NT_QUERY_INFORMATION_PROCESS)(HANDLE, PROCESSINFOCLASS,
                                                       PVOID, ULONG, PULONG);
-bool GetStartInfoByPid(const HANDLE &hProcess, std::string *imagepath,
-                       std::string *startparamater) {
+bool GetStartInfoByPid(const HANDLE &hProcess, std::string *startparamater) {
   bool result = false;
   ScopedModule m_ntdll(LoadLibrary(L"Ntdll"));
   if (m_ntdll) {
@@ -281,16 +261,7 @@ bool GetStartInfoByPid(const HANDLE &hProcess, std::string *imagepath,
           break;
         }
 
-        DWORD dwSize = para.ImagePathName.Length;
-        buffer = new WCHAR[dwSize / sizeof(WCHAR) + 1];
-        buffer[dwSize / sizeof(WCHAR)] = 0x00;
-        if (!ReadProcessMemory(hProcess, para.ImagePathName.Buffer, buffer,
-                               dwSize, &dwDummy)) {
-          break;
-        }
-        common::W2A(std::wstring(buffer), imagepath);
-
-        dwSize = para.CommandLine.Length;
+        DWORD dwSize = para.CommandLine.Length;
         buffer = new WCHAR[dwSize / sizeof(WCHAR) + 1];
         buffer[dwSize / sizeof(WCHAR)] = 0x00;
         if (!ReadProcessMemory(hProcess, para.CommandLine.Buffer, buffer,
@@ -304,7 +275,28 @@ bool GetStartInfoByPid(const HANDLE &hProcess, std::string *imagepath,
     }
   }
   return false;
-}  // namespace proc
+}
+
+bool ProcLoader::GetDetailByPid(Proc *proc) {
+  ScopedHandle hProcess(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                                    FALSE, proc->pid));
+  if (hProcess) {
+    if (!GetUserNameByPid(hProcess, &proc->username)) {
+      return false;
+    }
+    if (!GetStartInfoByPid(hProcess, &proc->startparamater)) {
+      return false;
+    }
+    if (!GetMemByPid(hProcess, &proc->memory, &proc->mem_usage)) {
+      return false;
+    }
+    if (!CpuHelper::GetCpuUsageByPid(proc->pid, &proc->cpu_usage, hProcess)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
 #endif
 
 }  // namespace proc

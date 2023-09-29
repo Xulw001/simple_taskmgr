@@ -1,7 +1,3 @@
-#include "cpu.h"
-
-#include "resource.h"
-
 #ifdef __linux__
 #include <stdio.h>
 #include <unistd.h>
@@ -12,6 +8,9 @@
 #endif
 #include <unordered_map>
 
+#include "cpu.h"
+#include "resource.h"
+
 namespace proc {
 
 using scope::ScopedFile;
@@ -21,11 +20,10 @@ typedef std::unordered_map<int64_t, CpuTime> CpuTimeMap;
 #ifdef __linux__
 int32_t hertz_ = 0;
 double uptime_save_ = 0.0;
-float frame_etscale_ = 0.0f;
 #elif defined(_WIN32)
 int64_t systime_save_ = 0;
-int64_t frame_etscale_ = 0;
 #endif
+float frame_etscale_ = 0.0f;
 CpuTimeMap time_map;
 
 bool CpuHelper::UpdateSysCpuTime() {
@@ -45,7 +43,7 @@ bool CpuHelper::UpdateSysCpuTime() {
     et = 0.005;
   }
   uptime_save_ = uptime_cur;
-  frame_etscale_ = 1000.0f / ((float)hertz_ * (float)et * 1 /*cpu*/);
+  frame_etscale_ = 100.0f / ((float)hertz_ * (float)et * 1 /*cpu*/);
   return true;
 #else
   int64_t systime_cur;
@@ -58,16 +56,17 @@ bool CpuHelper::UpdateSysCpuTime() {
   if (et == 0) {
     et = 1;
   }
+  frame_etscale_ = 100.0f / ((float)et * 1 /*cpu*/);
   systime_save_ = systime_cur;
-  frame_etscale_ = 1000.0f / et;
   return true;
 #endif
 }
 
 #ifdef __linux__
-bool CpuHelper::GetCpuUsageByPid(const int64_t &pid, int32_t *cpu_usage) {
+bool CpuHelper::GetCpuUsageByPid(const int64_t &pid, float *cpu_usage) {
 #else
-bool CpuHelper::GetCpuUsageByPid(const HANDLE &pid, int32_t *cpu_usage) {
+bool CpuHelper::GetCpuUsageByPid(const int64_t &process, float *cpu_usage,
+                                 const HANDLE &pid) {
 #endif
   CpuTime cputime_cur;
   bool ret = GetCpuTime(pid, &cputime_cur);
@@ -75,10 +74,10 @@ bool CpuHelper::GetCpuUsageByPid(const HANDLE &pid, int32_t *cpu_usage) {
     return false;
   }
 
-  CpuTimeMap::iterator find = time_map.find((int64_t)pid);
+  CpuTimeMap::iterator find = time_map.find(process);
   if (find == time_map.end()) {
-    *cpu_usage = -1;
-    time_map.emplace((int64_t)pid, cputime_cur);
+    *cpu_usage = 0.0f;
+    time_map.emplace(process, cputime_cur);
   } else {
     int64_t time_diff = (cputime_cur.s_time + cputime_cur.u_time) -
                         (find->second.s_time + find->second.u_time);
@@ -158,11 +157,11 @@ bool CpuHelper::GetSysCpuTime(int64_t *time) {
     return false;
   }
 
-  ULARGE_INTEGER cpu_time;
-  cpu_time.LowPart = kernelTime.dwLowDateTime + userTime.dwLowDateTime;
-  cpu_time.HighPart = kernelTime.dwHighDateTime + userTime.dwHighDateTime;
+  int64_t utime, stime;
+  FileTimeToInt64(kernelTime, utime);
+  FileTimeToInt64(userTime, stime);
 
-  *time = cpu_time.QuadPart;
+  *time = utime + stime;
   return true;
 }
 #endif

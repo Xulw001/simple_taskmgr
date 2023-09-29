@@ -16,16 +16,16 @@ class CpuHelper {
  public:
   static bool UpdateSysCpuTime();
 #ifdef __linux__
-  static bool GetCpuUsageByPid(const int64_t &pid, int32_t *cpu_usage);
-#else
-  static bool GetCpuUsageByPid(const HANDLE &hProcess, int32_t *cpu_usage);
-#endif
+  static bool GetCpuUsageByPid(const int64_t &pid, float *cpu_usage);
+
  private:
-#ifdef __linux__
   void InitHertz();
   static bool GetSysCpuTime(double *uptime);
   static bool GetCpuTime(const int64_t &pid, CpuTime *cpu_time);
 #elif defined(_WIN32)
+  static bool GetCpuUsageByPid(const int64_t &pid, float *cpu_usage, const HANDLE &hProcess);
+
+ private:
   static bool GetSysCpuTime(int64_t *uptime);
   static bool GetCpuTime(const HANDLE &hProcess, CpuTime *cpu_time);
 #endif
