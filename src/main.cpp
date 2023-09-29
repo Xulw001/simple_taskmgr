@@ -194,9 +194,10 @@ bool ShowWindow(const proc::ProcTable& table) {
       if (user.size() > 8) {
         user = user.substr(0, 8) + "..";
       }
-      common::ulong length = sprintf_s(
-          lines, col_fmt, table[j].pid, user.c_str(), table[j].memory,
-          table[j].cpu_usage, table[j].mem_usage, table[j].name.c_str());
+      common::ulong length =
+          sprintf_s(lines, col_fmt, (int32_t)table[j].pid, user.c_str(),
+                    (int32_t)table[j].memory, table[j].cpu_usage,
+                    table[j].mem_usage, table[j].name.c_str());
       Print(lines, length, {0, line});
     }
   }
