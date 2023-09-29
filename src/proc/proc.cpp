@@ -3,6 +3,7 @@
 #ifdef __linux__
 #include <pwd.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "proc.h"
 using scope::ScopedFile;
@@ -28,7 +29,7 @@ namespace proc {
 bool ProcLoader::TraverseProc(ProcTable *procs) {
   CpuHelper::UpdateSysCpuTime();
 #ifdef __linux__
-  return ProcLoader::ReadProc(ProcLoader::ProcReader, procs);
+  return ProcHelper::ReadProc(ProcLoader::ProcReader, procs);
 #else
   ScopedHandle hSnapshot(
       CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0));
@@ -57,25 +58,6 @@ bool ProcLoader::TraverseProc(ProcTable *procs) {
 }
 
 #ifdef __linux__
-void ProcLoader::ProcReader(const int64_t &pid, ProcTable *ptable) {
-  Proc proc;
-  proc.pid = pid;
-
-  if (!GetStatusInfoByPid(pid, &proc.name, &proc.username, &proc.memory)) {
-    return;
-  }
-
-  if (!CpuHelper::GetCpuUsageByPid(pid, &proc.cpu_usage)) {
-    return;
-  }
-
-  if (!GetStartInfoByPid(pid, &proc.startparamater)) {
-    return;
-  }
-
-  ptable->emplace_back(proc);
-}
-
 bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
   const char *meminfo_path = "/proc/meminfo";
   ScopedFile fp(fopen(meminfo_path, "r"));
@@ -84,7 +66,7 @@ bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
     int64_t total_memory = 0;
     while (fgets(line, sizeof(line), fp)) {
       if (strncmp(line, "MemTotal:", 9) == 0) {
-        sscanf(line, "%*s:%d", total_memory);
+        sscanf(line, "%*s:%lld", &total_memory);
         break;
       }
     }
@@ -97,7 +79,7 @@ bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
 bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
                         std::string *username, int64_t *memory) {
   char status_path[PROCPATHLEN];
-  sprintf(status_path, "/proc/%d/status", pid);
+  sprintf(status_path, "/proc/%lld/status", pid);
 
   ScopedFile fp(fopen(status_path, "r"));
   if (fp) {
@@ -117,7 +99,7 @@ bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
           username->assign(_passwd->pw_name);
         }
       } else if (strncmp(line, "VmRSS:", 6) == 0) {
-        sscanf(line, "%*s:%d", memory);
+        sscanf(line, "%*s:%lld", memory);
         break;
       }
     }
@@ -128,7 +110,7 @@ bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
 
 bool GetStartInfoByPid(const int64_t &pid, std::string *startparamater) {
   char cmd_path[PROCPATHLEN];
-  sprintf(cmd_path, "/proc/%d/cmdline", pid);
+  sprintf(cmd_path, "/proc/%lld/cmdline", pid);
 
   ScopedFile fp(fopen(cmd_path, "r"));
   if (fp) {
@@ -139,12 +121,31 @@ bool GetStartInfoByPid(const int64_t &pid, std::string *startparamater) {
       while (line[offset]) {
         startparamater->append(" ");
         startparamater->append(line + offset);
-        offset += startparamater.size() + 1;
+        offset += startparamater->size() + 1;
       }
     }
     return true;
   }
   return false;
+}
+
+void ProcLoader::ProcReader(const int64_t &pid, ProcTable *ptable) {
+  Proc proc;
+  proc.pid = pid;
+
+  if (!GetStatusInfoByPid(pid, &proc.name, &proc.username, &proc.memory)) {
+    return;
+  }
+
+  if (!CpuHelper::GetCpuUsageByPid(pid, &proc.cpu_usage)) {
+    return;
+  }
+
+  if (!GetStartInfoByPid(pid, &proc.startparamater)) {
+    return;
+  }
+
+  ptable->emplace_back(proc);
 }
 #else
 bool GetUserNameByPid(const HANDLE &hProcess, std::string *username) {

@@ -1,4 +1,3 @@
-#include <conio.h>
 #include <locale.h>
 #include <stdio.h>
 
@@ -51,7 +50,7 @@ int main(int argc, char* argvs[]) {
   proc::ProcTable table;
   proc::ProcLoader::TraverseProc(&table);
 #ifdef __linux__
-  _usleep(150 * 1000);
+  usleep(150 * 1000);
 #else
   Sleep(150);
 #endif

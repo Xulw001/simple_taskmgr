@@ -42,7 +42,7 @@ class ScopedResource {
 template <typename Value>
 class ScopedPtr {
  public:
-  typedef typename Value* PtrType;
+  typedef Value* PtrType;
 
   ScopedPtr() = default;
   ScopedPtr(const ScopedPtr&) = delete;

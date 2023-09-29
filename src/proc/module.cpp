@@ -30,7 +30,7 @@ bool GetModulesByPid(const int32_t &pid, ModuleTable *ptable) {
     char filename[1024];
     std::unordered_set<std::string> module_sets;
     while (fgets(line, sizeof(line), fp)) {
-      sscanf(line, "%*s %*s %*s %*s %*ld %s", filename);
+      sscanf(line, "%*s %*s %*s %*s %*d %s", filename);
       if (filename[0] == '/') {
         module_sets.emplace(filename);
       }

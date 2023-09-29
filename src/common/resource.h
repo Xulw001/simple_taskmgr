@@ -50,7 +50,7 @@ struct FileTraits {
   using Type = FILE*;
   static constexpr Type Default = NULL;
   static void Clean(Type& resource) {
-    if (!::fclose(resource)) {
+    if (::fclose(resource)) {
       throw except::Exception("Close File", errno);
     }
   }
@@ -59,7 +59,7 @@ using ScopedFile = ScopedResource<FileTraits>;
 
 template <typename Base>
 struct MemoryTraits {
-  using Type = typename Base*;
+  using Type = Base*;
   static constexpr Type Default = NULL;
   static void Clean(Type& resource) { delete[] resource; }
 };

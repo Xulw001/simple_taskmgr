@@ -65,19 +65,23 @@ bool CpuHelper::UpdateSysCpuTime() {
 #ifdef __linux__
 bool CpuHelper::GetCpuUsageByPid(const int64_t &pid, float *cpu_usage) {
 #else
-bool CpuHelper::GetCpuUsageByPid(const int64_t &process, float *cpu_usage,
-                                 const HANDLE &pid) {
+bool CpuHelper::GetCpuUsageByPid(const int64_t &pid, float *cpu_usage,
+                                 const HANDLE &process) {
 #endif
   CpuTime cputime_cur;
+#ifdef __linux__
   bool ret = GetCpuTime(pid, &cputime_cur);
+#else
+  bool ret = GetCpuTime(process, &cputime_cur);
+#endif
   if (!ret) {
     return false;
   }
 
-  CpuTimeMap::iterator find = time_map.find(process);
+  CpuTimeMap::iterator find = time_map.find(pid);
   if (find == time_map.end()) {
     *cpu_usage = 0.0f;
-    time_map.emplace(process, cputime_cur);
+    time_map.emplace(pid, cputime_cur);
   } else {
     int64_t time_diff = (cputime_cur.s_time + cputime_cur.u_time) -
                         (find->second.s_time + find->second.u_time);
@@ -90,7 +94,7 @@ bool CpuHelper::GetCpuUsageByPid(const int64_t &process, float *cpu_usage,
 #ifdef __linux__
 bool CpuHelper::GetCpuTime(const int64_t &pid, CpuTime *cpu_time) {
   char stat_path[PROCPATHLEN];
-  sprintf(stat_path, "/proc/%d/stat", pid);
+  sprintf(stat_path, "/proc/%lld/stat", pid);
   ScopedFile fp(fopen(stat_path, "r"));
   if (fp) {
     char line[1024];
@@ -98,11 +102,11 @@ bool CpuHelper::GetCpuTime(const int64_t &pid, CpuTime *cpu_time) {
       int64_t u_time, s_time, wait_u_time, wait_s_time, start_time;
       sscanf(line,
              "%*d %*s %*c %*d %*d %*d %*d %*d "
-             "%*lu %*lu %*lu %*lu %*lu"
+             "%*u %*u %*u %*u %*u"
              "%llu %llu %llu %llu"
-             "%*ld %*ld "
+             "%*d %*d "
              "%*d "
-             "%*ld "
+             "%*d "
              "%llu ", /* start_time */
              &u_time, &s_time, &wait_u_time, &wait_s_time, &start_time);
 

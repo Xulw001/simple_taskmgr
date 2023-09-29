@@ -8,11 +8,11 @@ namespace proc {
 using net::NetWorkTable;
 
 struct Proc {
-  int64_t pid;
+  common::int64_t pid;
   std::string name;
   std::string username;
   float cpu_usage;
-  int64_t memory;
+  common::int64_t memory;
   float mem_usage;
   std::string startparamater;
 };
@@ -28,11 +28,11 @@ struct ProcDetail {
 class ProcLoader {
  public:
   static bool TraverseProc(ProcTable *procs);
-  static bool GetProcByPid(const int64_t &pid, ProcDetail *proc);
+  static bool GetProcByPid(const common::int64_t &pid, ProcDetail *proc);
 
  private:
 #ifdef __linux__
-  static void ProcReader(const int64_t &pid, ProcTable *ptable);
+  static void ProcReader(const common::int64_t &pid, ProcTable *ptable);
 #else
   static bool GetDetailByPid(Proc *proc);
 #endif

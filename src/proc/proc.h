@@ -15,7 +15,7 @@ using namespace common;
 using scope::ScopedDir;
 
 template <typename T>
-using ProcReader = void (*)(const int64_t& pid, T* table);
+using ProcReader = void (*)(const common::int64_t& pid, T* table);
 
 class ProcHelper {
  public:
@@ -34,7 +34,7 @@ class ProcHelper {
             }
           }
           if (proc_match) {
-            int64_t pid = atoll(entry->d_name);
+            common::int64_t pid = atoll(entry->d_name);
             function(pid, table);
           }
         }
