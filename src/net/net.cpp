@@ -4,6 +4,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 #include <unordered_map>
 
@@ -37,15 +39,15 @@ bool DoGetTcpInfo(NetWorkTable *ptable) {
       char line[1024];
       while (fgets(line, sizeof(line), fp)) {
         unsigned long inode;
-        int num, local_port, remote_port, state, ;
+        int num, local_port, remote_port, state;
         char rem_addr[128], local_addr[128];
 
         num = sscanf(line,
-                     "%*d: %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X %X %*lX:%*lX "
-                     "*%X:%*lX %*lX %*d %*d %lu %*s\n",
+                     "%*d: %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X %X %*X:%*X "
+                     "%*X:%*X %*X %*d %*d %lu %*s\n",
                      local_addr, &local_port, rem_addr, &remote_port, &state,
                      &inode);
-        if (num < 11) {
+        if (num < 6) {
           continue;
         }
 
@@ -101,11 +103,11 @@ bool DoGetUdpInfo(NetWorkTable *ptable) {
         char rem_addr[128], local_addr[128];
 
         num = sscanf(line,
-                     "%*d: %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X %X %*lX:%*lX "
-                     "%*X:%*lX %*lX %*d %*d %lu %*s\n",
+                     "%*d: %64[0-9A-Fa-f]:%X %64[0-9A-Fa-f]:%X %X %*X:%*X "
+                     "%*X:%*X %*X %*d %*d %lu %*s\n",
                      local_addr, &local_port, rem_addr, &remote_port, &state,
                      &inode);
-        if (num < 10) {
+        if (num < 6) {
           continue;
         }
 
@@ -140,7 +142,7 @@ bool DoGetUdpInfo(NetWorkTable *ptable) {
 
 void Reader(const int64_t &pid, NetWorkTable *ptable) {
   char fd_dir[PROCPATHLEN];
-  sprintf(fd_dir, "/proc/%d/fd", pid);
+  sprintf(fd_dir, "/proc/%lld/fd", pid);
 
   scope::ScopedDir dir(opendir(fd_dir));
   if (dir) {
@@ -159,7 +161,7 @@ void Reader(const int64_t &pid, NetWorkTable *ptable) {
       }
 
       char fd_path[PROCPATHLEN];
-      sprintf(fd_path, "%s/%s", fd_dir, fd->d_name);
+      snprintf(fd_path, PROCPATHLEN, "%s/%s", fd_dir, fd->d_name);
 
       char lname[30];
       int len = readlink(fd_path, lname, sizeof(lname) - 1);
@@ -183,7 +185,7 @@ void Reader(const int64_t &pid, NetWorkTable *ptable) {
       }
 
       std::unordered_map<int32_t, int32_t>::iterator it = hash.find(inode);
-      if (it != tables.end()) {
+      if (it != hash.end()) {
         ptable->at(it->second).pid = pid;
       }
     }
