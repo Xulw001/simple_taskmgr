@@ -3,7 +3,11 @@
 
 #include "proc.hpp"
 #ifdef __linux__
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
 #include <sys/types.h>
+#include <termios.h>
 #include <unistd.h>
 #else
 #include <mutex>
@@ -70,6 +74,108 @@ int main(int argc, char* argvs[]) {
 char* header = {"  PID    USER       RSS      %CPU  %MEM  NAME"};
 char* col_fmt = {"  %-6d %-10s %-8d  %2.1f   %2.1f  %s"};
 #ifdef __linux__
+
+common::int16_t height = 0;
+common::int16_t width = 0;
+common::int32_t begin = 0;
+
+bool InitConsole() {
+  printf("\x1b[2J");
+  printf("\x1b[?25l");
+
+  struct winsize size;
+  if (ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == -1) {
+    return false;
+  }
+
+  width = size.ws_col;
+  height = size.ws_row;
+
+  struct termios setting;
+  tcgetattr(STDIN_FILENO, &setting);
+  setting.c_lflag &= ~ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &setting);
+
+  return true;
+}
+
+bool ResetConsole() {
+  printf("\x1b[1B\x1b[1G");
+  printf("\x1b[?25h");
+
+  struct termios setting;
+  tcgetattr(STDIN_FILENO, &setting);
+  setting.c_lflag |= ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &setting);
+}
+
+void move(int y) { printf("\x1b[%d;1H", y); }
+
+void fill(const char* str, common::ulong len) {
+  char line[1024] = {0};
+  memset(line, ' ', width - len);
+  printf("%s%s", str, line);
+}
+
+void print(const char* str) { printf("%s\x1b[K", str); }
+
+bool IoWait(common::ulong sec, common::ulong usec) {
+  fd_set io;
+  FD_SET(STDIN_FILENO, &io);
+  timeval timeout = {sec, usec};
+  if (select(STDIN_FILENO + 1, &io, NULL, NULL, &timeout) > 0) {
+    return true;
+  }
+  return false;
+}
+
+bool ShowWindow(const proc::ProcTable& table) {
+  const common::int16_t row = 2;
+  printf("\x1b[2;1H");
+  printf("\x1b[30;47m");
+  fill(header, strlen(header));
+  printf("\x1b[39;49m");
+
+  int j = (begin >= table.size()) ? table.size() - 1 : begin;
+  char lines[1024];
+  for (int16_t line = row + 1; line < height; line++, j++) {
+    move(line);
+    if (j >= table.size()) {
+      print("");
+    } else {
+      std::string user = table[j].username;
+      if (user.size() > 8) {
+        user = user.substr(0, 8) + "..";
+      }
+      common::ulong length =
+          sprintf(lines, col_fmt, (int32_t)table[j].pid, user.c_str(),
+                  (int32_t)table[j].memory, table[j].cpu_usage,
+                  table[j].mem_usage, table[j].name.c_str());
+      print(lines);
+    }
+  }
+
+  if (IoWait(1, 500000)) {
+    char cmd[10] = {0};
+    if (read(STDIN_FILENO, cmd, sizeof(cmd)) > 0) {
+      switch (cmd[0]) {
+        case 'q':
+          ResetConsole();
+          return false;
+        case '\033':
+          if (strcmp(cmd, "\033[B") == 0) {
+            if (begin < table.size() - 1) begin++;
+          } else if (strcmp(cmd, "\033[A") == 0) {
+            if (begin > 0) begin--;
+          }
+        default:
+          break;
+      }
+    }
+  }
+
+  return true;
+}
 #else
 
 scope::ScopedHandle hOutput;
@@ -183,7 +289,7 @@ bool ShowWindow(const proc::ProcTable& table) {
   Clear({0, 0});
   Print(header, strlen(header), {0, 1});
 
-  int j = begin;
+  int j = (begin >= table.size()) ? table.size() - 1 : begin;
   char lines[1024];
   for (int16_t line = 2; line < height; line++, j++) {
     if (j >= table.size()) {
