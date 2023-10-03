@@ -58,7 +58,7 @@ bool ProcLoader::TraverseProc(ProcTable *procs) {
 }
 
 #ifdef __linux__
-bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
+bool GetMemUsage(const int64_t &memory, float *mem_usage) {
   const char *meminfo_path = "/proc/meminfo";
   ScopedFile fp(fopen(meminfo_path, "r"));
   if (fp) {
@@ -66,11 +66,11 @@ bool GetStatusInfoByPid(const int64_t &memory, float *mem_usage) {
     int64_t total_memory = 0;
     while (fgets(line, sizeof(line), fp)) {
       if (strncmp(line, "MemTotal:", 9) == 0) {
-        sscanf(line, "%*s:%lld", &total_memory);
+        sscanf(line, "%*s%lld", &total_memory);
         break;
       }
     }
-    *mem_usage = memory * 1024 * 100.0f / total_memory;
+    *mem_usage = memory * 100.0f / total_memory;
     return true;
   }
   return false;
@@ -86,12 +86,12 @@ bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
     char line[4096];
     while (fgets(line, sizeof(line), fp)) {
       if (strncmp(line, "Name:", 5) == 0) {
-        char name[PROCPATHLEN];
-        sscanf(line, "%*s:%s", name);
+        char name[PROCPATHLEN] = {0};
+        sscanf(line, "%*s%s", name);
         sname->assign(name);
       } else if (strncmp(line, "Uid:", 4) == 0) {
         int32_t uid = 0;
-        sscanf(line, "%*s:%d", &uid);
+        sscanf(line, "%*s%d", &uid);
 
         struct passwd *_passwd;
         _passwd = getpwuid(uid);
@@ -99,7 +99,7 @@ bool GetStatusInfoByPid(const int64_t &pid, std::string *sname,
           username->assign(_passwd->pw_name);
         }
       } else if (strncmp(line, "VmRSS:", 6) == 0) {
-        sscanf(line, "%*s:%lld", memory);
+        sscanf(line, "%*s%lld", memory);
         break;
       }
     }
@@ -121,7 +121,7 @@ bool GetStartInfoByPid(const int64_t &pid, std::string *startparamater) {
       while (line[offset]) {
         startparamater->append(" ");
         startparamater->append(line + offset);
-        offset += startparamater->size() + 1;
+        offset = startparamater->size() + 1;
       }
     }
     return true;
@@ -132,8 +132,13 @@ bool GetStartInfoByPid(const int64_t &pid, std::string *startparamater) {
 void ProcLoader::ProcReader(const int64_t &pid, ProcTable *ptable) {
   Proc proc;
   proc.pid = pid;
+  proc.memory = 0;
 
   if (!GetStatusInfoByPid(pid, &proc.name, &proc.username, &proc.memory)) {
+    return;
+  }
+
+  if (!GetMemUsage(proc.memory, &proc.mem_usage)) {
     return;
   }
 
