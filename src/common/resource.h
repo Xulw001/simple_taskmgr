@@ -17,7 +17,7 @@ struct DirTraits {
   using Type = DIR*;
   static constexpr Type Default = NULL;
   static void Clean(Type& resource) {
-    if (!::closedir(resource)) {
+    if (::closedir(resource)) {
       throw except::Exception("Close Dir", errno);
     }
   }
